@@ -1,0 +1,14 @@
+group 'gq.erokhin'
+version '0.1-SNAPSHOT'
+
+apply plugin: 'java'
+
+sourceCompatibility = 1.8
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    //TODO: add dependencies here
+}
