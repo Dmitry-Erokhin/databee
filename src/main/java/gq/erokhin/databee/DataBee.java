@@ -1,22 +1,20 @@
 package gq.erokhin.databee;
 
+import reactor.core.publisher.Flux;
+
 import java.sql.Connection;
-import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.function.Function;
 import java.util.function.Supplier;
-
-import reactor.core.publisher.Flux;
 
 /**
  * Created by Dmitry Erokhin (dmitry.erokhin@gmail.com)
  * 14/05/2017
  */
-public final class DataBee<T> {
+public final class DataBee {
     private final Connection connection;
     private String query;
-    private Function<ResultSet, T> mapper;
     private int fetchSize;
     private Supplier<Boolean> condition;
     private Duration interval;
@@ -24,15 +22,22 @@ public final class DataBee<T> {
     private volatile boolean running;
 
     private DataBee(final Connection connection) {
+        try {
+            if (connection.isClosed()) {
+                throw new IllegalStateException("Can not operate on closed connection");
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Can not check if connection is closed", e);
+        }
         this.connection = connection;
         running = false;
     }
 
-    public static <T> DataBee<T> of(final Connection connection) {
-        return new DataBee<>(connection);
+    public static DataBee of(final Connection connection) {
+        return new DataBee(Objects.requireNonNull(connection));
     }
 
-    public DataBee<T> query(final String query) {
+    public DataBee query(final String query) {
         this.query = Objects.requireNonNull(query);
         if (query.isEmpty()) {
             throw new IllegalArgumentException("Can not proceed – query is empty");
@@ -40,21 +45,16 @@ public final class DataBee<T> {
         return this;
     }
 
-    public DataBee<T> mapper(final Function<ResultSet, T> mapper) {
-        this.mapper = Objects.requireNonNull(mapper);
-        return this;
-    }
-
-    public DataBee<T> fetchSize(final int fetchSize) {
+    public DataBee fetchSize(final int fetchSize) {
         this.fetchSize = fetchSize;
         return this;
     }
 
-    public DataBee<T> repeatWhile(final Supplier<Boolean> condition) {
+    public DataBee repeatWhile(final Supplier<Boolean> condition) {
         return this.repeatWhile(condition, Duration.ZERO);
     }
 
-    public DataBee<T> repeatWhile(final Supplier<Boolean> condition, final Duration interval) {
+    public DataBee repeatWhile(final Supplier<Boolean> condition, final Duration interval) {
         this.condition = Objects.requireNonNull(condition);
         this.interval = Objects.requireNonNull(interval);
         if (interval.isNegative()) {
@@ -63,7 +63,7 @@ public final class DataBee<T> {
         return this;
     }
 
-    public Flux<T> flux() {
+    public Flux flux() {
         checkState();
 
         if (running) {
@@ -76,10 +76,6 @@ public final class DataBee<T> {
     private void checkState() {
         if (query == null) {
             throw new IllegalStateException("Can not proceed – query was not set");
-        }
-
-        if (mapper == null) {
-            throw new IllegalStateException("Can not proceed – mapper was not set");
         }
     }
 
