@@ -34,7 +34,7 @@ class DataBeeTest extends Specification {
     }
 
     def "Sample test"() {
-        setup:
+        given:
         def data
 
         when:
@@ -42,5 +42,21 @@ class DataBeeTest extends Specification {
 
         then:
         data[0].count == SAMPLE_ROW_COUNT
+    }
+
+
+    def "Should feed data through flux"() {
+        given:
+        def flux = DataBee.of(conn)
+                .query('SELECT * FROM test')
+                .mapper({ it.getString('data') })
+                .flux()
+
+        when:
+        def data = flux.collectList().block()
+
+        then:
+        data.size() == SAMPLE_ROW_COUNT
+        data == [1..SAMPLE_ROW_COUNT].collect { "Test data #$it" }
     }
 }

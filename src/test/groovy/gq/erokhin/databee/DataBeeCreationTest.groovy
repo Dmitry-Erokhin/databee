@@ -7,6 +7,7 @@ import java.sql.DriverManager
 import java.time.Duration
 
 import static gq.erokhin.databee.DataBeeTestUtils.DB_URL
+import static java.util.function.Function.identity
 
 /**
  *  Created by Dmitry Erokhin (dmitry.erokhin@gmail.com)
@@ -51,6 +52,16 @@ class DataBeeCreationTest extends Specification {
         thrown(Exception)
     }
 
+
+    def "Should NOT allow create flux for DataBee without mapper"() {
+        when:
+        DataBee.of(conn).query("SELECT 1").flux()
+
+        then:
+        thrown(Exception)
+    }
+
+
     def "Should accept only positive intervals for recurrent setup"() {
         when:
         DataBee.of(conn).repeatWhile({ true }, Duration.ofDays(1).negated())
@@ -60,11 +71,28 @@ class DataBeeCreationTest extends Specification {
     }
 
     def "Should create flux for configured DataBee"() {
+        given:
+        def bee = DataBee.of(conn).mapper(identity()).query("SELECT 1")
+        def flux
+
         when:
-        def flux = DataBee.of(conn).query("SELECT 1").flux()
+        flux = bee.flux()
 
         then:
         noExceptionThrown()
         flux
+    }
+
+
+    def "Should NOT create more than one flux from single DataBee"() {
+        given:
+        def bee = DataBee.of(conn).mapper(identity()).query("SELECT 1")
+
+        when:
+        bee.flux()
+        bee.flux()
+
+        then:
+        thrown(Exception)
     }
 }
