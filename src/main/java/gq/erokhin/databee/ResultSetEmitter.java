@@ -11,15 +11,20 @@ import java.util.function.Consumer;
  */
 class ResultSetEmitter {
     private final Consumer<? super ResultSet> consumer;
+    private final Runnable finalizer;
     private final Statement stmt;
     private final String query;
 
     private ResultSet resultSet;
 
-    ResultSetEmitter(final Statement stmt, final String query, final Consumer<? super ResultSet> consumer) {
+    ResultSetEmitter(final Statement stmt,
+                     final String query,
+                     final Consumer<? super ResultSet> consumer,
+                     Runnable finalizer) {
         this.consumer = consumer;
         this.stmt = stmt;
         this.query = query;
+        this.finalizer = finalizer;
     }
 
     void emmitResults(final long n) throws SQLException {
@@ -27,8 +32,15 @@ class ResultSetEmitter {
             resultSet = stmt.executeQuery(query);
         }
         int i = 0;
-        while (i++ < n && resultSet.next()) { //Order of statements is very important :)
-            consumer.accept(resultSet);
-        }
+        boolean hasData;
+        do {
+            hasData = resultSet.next();
+            if (hasData) {
+                consumer.accept(resultSet);
+            } else {
+                finalizer.run();
+            }
+
+        } while (i++ < n && hasData); //To consume even empty result sets al least once
     }
 }

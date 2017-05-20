@@ -11,10 +11,9 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+
 import static java.sql.ResultSet.CONCUR_READ_ONLY;
 import static java.sql.ResultSet.TYPE_FORWARD_ONLY;
-
-import reactor.core.publisher.Flux;
 
 /**
  * Created by Dmitry Erokhin (dmitry.erokhin@gmail.com)
@@ -87,16 +86,9 @@ public final class DataBee<T> {
         return Flux.create(sink -> {
                     final Consumer<ResultSet> rsConsumer = rs -> {
                         sink.next(mapper.apply(rs));
-                        try {
-                            if (rs.isAfterLast()) { //Finish at the end on result set
-                                sink.complete();
-                            }
-                        } catch (final SQLException e) {
-                            sink.error(e);
-                        }
                     };
 
-                    final ResultSetEmitter emitter = new ResultSetEmitter(statement, query, rsConsumer);
+                    final ResultSetEmitter emitter = new ResultSetEmitter(statement, query, rsConsumer, sink::complete);
 
                     sink.onRequest(n -> {
                                 try {
@@ -140,7 +132,7 @@ public final class DataBee<T> {
         }
 
         if (active) {
-            throw new IllegalStateException("Can not create more then one stream from give data bee");
+            throw new IllegalStateException("Can not create more then one stream from given data bee");
         }
     }
 
