@@ -1,5 +1,7 @@
 package gq.erokhin.databee;
 
+import reactor.core.publisher.Flux;
+
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -30,12 +32,19 @@ public final class DataBee<T> {
     private Boolean wasAutoCommit;
 
     private DataBee(final Connection connection) {
+        try {
+            if (connection.isClosed()) {
+                throw new IllegalStateException("Can not operate on closed connection");
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Can not check if connection is closed", e);
+        }
         this.connection = connection;
-        active = false;
+        this.active = false;
     }
 
-    public static <T> DataBee<T> of(final Connection connection) {
-        return new DataBee<>(connection);
+    public static DataBee of(final Connection connection) {
+        return new DataBee(Objects.requireNonNull(connection));
     }
 
     public DataBee<T> query(final String query) {

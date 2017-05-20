@@ -2,6 +2,7 @@ group 'gq.erokhin'
 version '0.1-SNAPSHOT'
 
 apply plugin: 'java'
+apply plugin: 'groovy'
 
 sourceCompatibility = 1.8
 
@@ -10,5 +11,10 @@ repositories {
 }
 
 dependencies {
-    //TODO: add dependencies here
+    compile 'io.projectreactor:reactor-core:3.0.7.RELEASE'
+
+    testCompile 'org.codehaus.groovy:groovy-all:2.4.1q'
+    testCompile 'org.spockframework:spock-core:1.1-groovy-2.4'
+
+    testRuntime 'com.h2database:h2:1.4.195'
 }
