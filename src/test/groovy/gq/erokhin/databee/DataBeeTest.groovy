@@ -1,13 +1,15 @@
 package gq.erokhin.databee
 
 import groovy.sql.Sql
+import reactor.core.publisher.Flux
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
 
-import static gq.erokhin.databee.DataBeeTestUtils.DB_URL
-import static gq.erokhin.databee.DataBeeTestUtils.SAMPLE_ROW_COUNT
+import static gq.erokhin.databee.DataBeeTestUtils.*
 
 /**
  *  Created by Dmitry Erokhin (dmitry.erokhin@gmail.com)
@@ -28,24 +30,10 @@ class DataBeeTest extends Specification {
     }
 
     void cleanup() {
-        def sql = new Sql(conn)
-        sql.execute('DROP TABLE IF EXISTS test')
-        conn.close()
+        Sql.newInstance(DB_URL).execute('DROP TABLE IF EXISTS test')
     }
 
-    def "Sample test"() {
-        given:
-        def data
-
-        when:
-        data = new Sql(conn).rows("SELECT count(*) AS count FROM test")
-
-        then:
-        data[0].count == SAMPLE_ROW_COUNT
-    }
-
-
-    def "Should feed data through flux"() {
+    def "Should feed data"() {
         given:
         def flux = DataBee.of(conn)
                 .query('SELECT * FROM test')
@@ -53,10 +41,83 @@ class DataBeeTest extends Specification {
                 .flux()
 
         when:
-        def data = flux.collectList().block()
+        def data = flux.collectList().block(MAX_WAIT)
 
         then:
         data.size() == SAMPLE_ROW_COUNT
-        data == [1..SAMPLE_ROW_COUNT].collect { "Test data #$it" }
+        data == (0..SAMPLE_ROW_COUNT - 1).collect({ "Test data #$it" })
     }
+
+    def "Should produce correct data for empty result set"() {
+        given:
+        def flux = DataBee.of(conn)
+                .query('SELECT * FROM test WHERE 1=0')
+                .mapper({ it })
+                .flux()
+
+        when:
+        def data = flux.collectList().block(MAX_WAIT)
+
+        then:
+        data.size() == 0
+    }
+
+    def "Should wrap errors with handler"() {
+        given:
+        def flux = DataBee.of(conn)
+                .query('SELECT * FROM test WHERE 1/0 = 5')
+                .mapper({ it })
+                .flux()
+
+        when:
+        def data = flux.onErrorResume(SQLException.class, { Flux.just('Plan B') }).collectList().block(MAX_WAIT)
+
+        then:
+        data == ['Plan B']
+    }
+
+    def "Should NOT wrap errors without handler"() {
+        given:
+        def flux = DataBee.of(conn)
+                .query('SELECT * FROM test WHERE 1/0 = 5')
+                .mapper({ it })
+                .flux()
+
+        when:
+        flux.collectList().block(MAX_WAIT)
+
+        then:
+        Throwable e = thrown()
+        e.getSuppressed().any { it.class.isAssignableFrom(SQLException.class) }
+    }
+
+    @Unroll
+    def "Should close connection when #caseName"() {
+        given:
+        def flux = DataBee.of(conn)
+                .query(sql)
+                .mapper({ it.getString('data') })
+                .flux()
+
+        if (recover) {
+            flux = flux.onErrorResume(SQLException.class, { Flux.just('Plan B') })
+        }
+
+        when:
+        try {
+            flux.collectList().block(MAX_WAIT)
+        } catch (Throwable ignored) {
+        }
+
+        then:
+        conn.isClosed()
+
+        where:
+        caseName                                | recover | sql
+        "finishing feed"                        | true    | 'SELECT * FROM test'
+        "empty result set returned"             | true    | 'SELECT * FROM test WHERE 1=0'
+        "exception occurred (with recovery)"    | true    | 'SELECT * FROM test WHERE 1/0=5'
+        "exception occurred (without recovery)" | false   | 'SELECT * FROM test WHERE 1/0=5'
+    }
+
 }

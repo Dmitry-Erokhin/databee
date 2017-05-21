@@ -5,10 +5,15 @@ import reactor.core.publisher.Flux;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+
+import static java.sql.ResultSet.CONCUR_READ_ONLY;
+import static java.sql.ResultSet.TYPE_FORWARD_ONLY;
 
 /**
  * Created by Dmitry Erokhin (dmitry.erokhin@gmail.com)
@@ -22,7 +27,8 @@ public final class DataBee<T> {
     private Supplier<Boolean> condition;
     private Duration interval;
 
-    private volatile boolean running;
+    private volatile boolean active;
+    private Boolean wasAutoCommit;
 
     private DataBee(final Connection connection) {
         try {
@@ -33,7 +39,7 @@ public final class DataBee<T> {
             throw new IllegalStateException("Can not check if connection is closed", e);
         }
         this.connection = connection;
-        running = false;
+        this.active = false;
     }
 
     public static DataBee of(final Connection connection) {
@@ -71,17 +77,58 @@ public final class DataBee<T> {
         return this;
     }
 
-    public Flux<T> flux() {
-        checkState();
+    public Flux<T> flux() throws SQLException {
+        assertCanBeActivated();
+        active = true;
 
-        if (running) {
-            throw new IllegalStateException("Can not create more then one stream from give data bee");
-        }
-        running = true;
-        return Flux.empty(); //TODO: add implementation
+        final Statement statement = createStatement();
+
+        return Flux.create(sink -> {
+                    final Consumer<ResultSet> rsConsumer = rs -> {
+                        sink.next(mapper.apply(rs));
+                    };
+
+                    final ResultSetEmitter emitter = new ResultSetEmitter(statement, query, rsConsumer, sink::complete);
+
+                    sink.onDispose(() -> {
+                        try {
+                            connection.close();
+                        } catch (final SQLException e) {//TODO: #6 logging
+                            System.err.println("Could not properly close connection. Autocommit would not be restored.");
+                            e.printStackTrace();
+                            return;
+                        }
+
+                        if (wasAutoCommit != null && wasAutoCommit) {
+                            try {
+                                connection.setAutoCommit(true);
+                            } catch (final SQLException e) {//TODO: #6 logging
+                                System.err.println("Could not set connection autocommit state back to true");
+                                e.printStackTrace();
+                            }
+                        }
+                    });
+
+
+                    //FIXME: create issue or PR to Reactor
+                    // In Reactor core (v. 3.0.7) calling this function lead to implicit initial request to source.
+                    // IF this initialisation happens before sink.onDispose AND data flow finishing (which is an our
+                    // case cause subscription is unlimited) it can not proper dispose because dispose method will
+                    // not be specified by this time
+                    sink.onRequest(n -> {
+                                try {
+                                    emitter.emmitResults(n);
+                                } catch (final SQLException e) {
+                                    sink.error(e);
+                                }
+                            }
+                    );
+                }
+        );
+
     }
 
-    private void checkState() {
+    private void assertCanBeActivated() {
         if (query == null) {
             throw new IllegalStateException("Can not proceed – query was not set");
         }
@@ -89,6 +136,28 @@ public final class DataBee<T> {
         if (mapper == null) {
             throw new IllegalStateException("Can not proceed – mapper was not set");
         }
+
+        if (active) {
+            throw new IllegalStateException("Can not create more then one stream from given data bee");
+        }
+    }
+
+    private Statement createStatement() throws SQLException {
+        final Statement statement;
+        try {
+            if (fetchSize > 0) {
+                wasAutoCommit = connection.getAutoCommit();
+                connection.setAutoCommit(false);
+                statement = connection.createStatement(TYPE_FORWARD_ONLY, CONCUR_READ_ONLY);
+                statement.setFetchSize(fetchSize);
+            } else {
+                statement = connection.createStatement();
+            }
+        } catch (final SQLException e) {
+            e.printStackTrace(); //TODO #6 – add proper logging
+            throw e;
+        }
+        return statement;
     }
 
 }
