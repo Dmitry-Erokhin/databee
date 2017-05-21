@@ -16,6 +16,8 @@ class ResultSetEmitter {
     private final String query;
 
     private ResultSet resultSet;
+    private ResultSet wrapper;
+
 
     ResultSetEmitter(final Statement stmt,
                      final String query,
@@ -30,13 +32,15 @@ class ResultSetEmitter {
     void emmitResults(final long n) throws SQLException {
         if (resultSet == null) {
             resultSet = stmt.executeQuery(query);
+            wrapper = new ResultSetWrapper(resultSet);
         }
         int i = 0;
         boolean hasData;
+
         do {
             hasData = resultSet.next();
             if (hasData) {
-                consumer.accept(resultSet);
+                consumer.accept(wrapper);
             } else {
                 finalizer.run();
             }
