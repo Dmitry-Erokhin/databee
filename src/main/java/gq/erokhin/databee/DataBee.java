@@ -1,5 +1,7 @@
 package gq.erokhin.databee;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 import java.sql.Connection;
@@ -20,6 +22,8 @@ import static java.sql.ResultSet.TYPE_FORWARD_ONLY;
  * 14/05/2017
  */
 public final class DataBee<T> {
+    private static final Logger LOG = LoggerFactory.getLogger(DataBee.class);
+
     private final Connection connection;
     private String query;
     private Function<ResultSet, T> mapper;
@@ -40,6 +44,8 @@ public final class DataBee<T> {
         }
         this.connection = connection;
         this.active = false;
+
+        LOG.debug("New bee was created");
     }
 
     public static DataBee of(final Connection connection) {
@@ -51,16 +57,22 @@ public final class DataBee<T> {
         if (query.isEmpty()) {
             throw new IllegalArgumentException("Can not proceed – query is empty");
         }
+
+        LOG.debug("Added query: {}", query);
         return this;
     }
 
     public DataBee<T> mapper(final Function<ResultSet, T> mapper) {
         this.mapper = Objects.requireNonNull(mapper);
+
+        LOG.debug("Added mapper: {}", mapper);
         return this;
     }
 
     public DataBee<T> fetchSize(final int fetchSize) {
         this.fetchSize = fetchSize;
+
+        LOG.debug("Set fetch size: {}", fetchSize);
         return this;
     }
 
@@ -74,14 +86,17 @@ public final class DataBee<T> {
         if (interval.isNegative()) {
             throw new IllegalArgumentException("Can not proceed – interval is negative");
         }
+
+        LOG.debug("Set condition guarded polling with interval of {} ms", interval.toMillis());
         return this;
     }
 
     public Flux<T> flux() throws SQLException {
         assertCanBeActivated();
+        final Statement statement = createStatement();
         active = true;
 
-        final Statement statement = createStatement();
+        LOG.debug("Bee activated");
 
         return Flux.create(sink -> {
                     final Consumer<ResultSet> rsConsumer = rs -> {
@@ -93,18 +108,17 @@ public final class DataBee<T> {
                     sink.onDispose(() -> {
                         try {
                             connection.close();
-                        } catch (final SQLException e) {//TODO: #6 logging
-                            System.err.println("Could not properly close connection. Autocommit would not be restored.");
-                            e.printStackTrace();
+                            LOG.debug("Bee connections closed");
+                        } catch (final SQLException e) {
+                            LOG.error("Could not properly close connection. Autocommit would not be restored.", e);
                             return;
                         }
 
                         if (wasAutoCommit != null && wasAutoCommit) {
                             try {
                                 connection.setAutoCommit(true);
-                            } catch (final SQLException e) {//TODO: #6 logging
-                                System.err.println("Could not set connection autocommit state back to true");
-                                e.printStackTrace();
+                            } catch (final SQLException e) {
+                                LOG.error("Could not set connection autocommit state back to true");
                             }
                         }
                     });
@@ -123,6 +137,8 @@ public final class DataBee<T> {
                                 }
                             }
                     );
+
+                    LOG.debug("Publisher created");
                 }
         );
 
@@ -154,7 +170,7 @@ public final class DataBee<T> {
                 statement = connection.createStatement();
             }
         } catch (final SQLException e) {
-            e.printStackTrace(); //TODO #6 – add proper logging
+            LOG.warn("Could not create statement", e);
             throw e;
         }
         return statement;
