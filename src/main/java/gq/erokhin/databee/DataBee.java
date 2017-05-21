@@ -90,15 +90,6 @@ public final class DataBee<T> {
 
                     final ResultSetEmitter emitter = new ResultSetEmitter(statement, query, rsConsumer, sink::complete);
 
-                    sink.onRequest(n -> {
-                                try {
-                                    emitter.emmitResults(n);
-                                } catch (final SQLException e) {
-                                    sink.error(e);
-                                }
-                            }
-                    );
-
                     sink.onDispose(() -> {
                         try {
                             connection.close();
@@ -117,6 +108,21 @@ public final class DataBee<T> {
                             }
                         }
                     });
+
+
+                    //FIXME: create issue or PR to Reactor
+                    // In Reactor core (v. 3.0.7) calling this function lead to implicit initial request to source.
+                    // IF this initialisation happens before sink.onDispose AND data flow finishing (which is an our
+                    // case cause subscription is unlimited) it can not proper dispose because dispose method will
+                    // not be specified by this time
+                    sink.onRequest(n -> {
+                                try {
+                                    emitter.emmitResults(n);
+                                } catch (final SQLException e) {
+                                    sink.error(e);
+                                }
+                            }
+                    );
                 }
         );
 
@@ -153,6 +159,5 @@ public final class DataBee<T> {
         }
         return statement;
     }
-
 
 }
