@@ -12,6 +12,7 @@ repositories {
 
 dependencies {
     compile 'io.projectreactor:reactor-core:3.0.7.RELEASE'
+    compile 'org.slf4j:slf4j-api:1.7.25'
 
     testCompile 'org.codehaus.groovy:groovy-all:2.4.1q'
     testCompile 'org.spockframework:spock-core:1.1-groovy-2.4'
