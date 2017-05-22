@@ -27,12 +27,18 @@ import java.util.Map;
  * Created by Dmitry Erokhin (dmitry.erokhin@gmail.com)
  * 21.05.17
  */
-
 public class ResultSetWrapper implements ResultSet {
+
+    private final ResultSet delegate;
+
+    ResultSetWrapper(ResultSet delegate) {
+        this.delegate = delegate;
+    }
+
 
     @Override
     public boolean next() throws SQLException {
-        return delegate.next();
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -1007,12 +1013,6 @@ public class ResultSetWrapper implements ResultSet {
     @Override
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
         throw new UnsupportedOperationException();
-    }
-
-    private final ResultSet delegate;
-
-    ResultSetWrapper(ResultSet delegate) {
-        this.delegate = delegate;
     }
 
 }
