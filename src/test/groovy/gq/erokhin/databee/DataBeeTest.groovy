@@ -120,4 +120,20 @@ class DataBeeTest extends Specification {
         "exception occurred (without recovery)" | false   | 'SELECT * FROM test WHERE 1/0=5'
     }
 
+
+    def "Should wrap ResultSet for mapper"() {
+        given:
+        def result = ""
+        def flux = DataBee.of(conn)
+                .query('SELECT * FROM test LIMIT 1')
+                .mapper({ result = it.class.getName() })
+                .flux()
+
+        when:
+        flux.collectList().block(MAX_WAIT)
+
+        then:
+        result == ResultSetWrapper.class.getName()
+
+    }
 }
